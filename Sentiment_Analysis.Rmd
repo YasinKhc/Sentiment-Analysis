@@ -1,0 +1,183 @@
+---
+title: "Sentiment Analysis"
+author: "Yasin Khadem Charvadeh"
+output:
+  html_document:
+    df_print: paged
+    code_folding: "show"
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE,
+                      tidy = TRUE)
+```
+
+For data request please email me at <ykhademc@uwo.ca>.
+
+```{r}
+library(kableExtra)
+library(stringr)
+library(wordcloud)
+library(SentimentAnalysis)
+library(SnowballC)
+library(RSentiment)
+library(textclean)
+library(tm)
+library(textstem)
+library(tidyverse)
+library(syuzhet)
+## import the the data set
+
+podcast_data <- read_csv("~/podcast_data_unlabelled_test.csv")
+
+```
+#### find the unique Podcasts
+```{r}
+uni_podcast_data <- podcast_data[!duplicated(podcast_data$title),]
+
+uni_podcast_data %>% kbl(align = rep("c", 9), escape = TRUE, longtable = TRUE) %>%
+    kable_styling(bootstrap_options = c("basic", "hover"), fixed_thead = TRUE) %>%
+    column_spec(2, color = "green") %>% 
+    scroll_box(width = "1050px", height = "300px")
+```
+
+Cleaning text data may vary depending on the nature of the text. You may need to explore the text first and then decide about appropriate manipulation.
+```{r}
+## Make sure there is space after comma
+
+text_data <- add_comma_space(uni_podcast_data$summary)
+
+## Remove URL
+
+text_data <- replace_url(text_data)
+
+## Remove punctuation and replace it with space
+
+text_data <- gsub(pattern = "\\W", replacement = " ", text_data)
+
+## Remove numbers and replace with space
+
+text_data <- gsub(pattern = "\\d", replacement = " ", text_data)
+
+## Convert all the text into lower case
+
+text_data <- tolower(text_data)
+
+## Replace symbols
+
+text_data <- replace_symbol(text_data)
+
+## Remove stop words
+
+text_data <- removeWords(text_data, stopwords("english"))
+
+## Remove single characters
+
+text_data <- gsub(pattern = "\\b[A-z]\\b{1}", replacement = " ", text_data)
+
+## Remove extra white spaces
+
+text_data <- stripWhitespace(text_data)
+
+## Replace Word Elongations
+
+text_data <- replace_word_elongation(text_data, impart.meaning = TRUE)
+
+## Remove non-english charaters
+
+for (i in 1:length(text_data)){
+  text_data[[i]] <- gsub('[^a-zA-Z|[:blank:]]', "", text_data[[i]])
+}
+```
+
+
+The R code below uses the analyzeSentiment() function to compute sentiment statistics for each podcast.
+
+```{r}
+
+## Matrix with sentiment values
+
+Sent_score <- analyzeSentiment(text_data, language="english", stemming = FALSE, removeStopwords = FALSE)
+Sent_score[1:4,]
+```
+
+```{r}
+
+## Obtain sentiment scores of different emotions
+
+EMO <- get_nrc_sentiment(text_data)
+
+EMO_plot <- rownames_to_column(as.data.frame(colSums(EMO)))
+
+colnames(EMO_plot) <- c("emotion", "count")
+
+## Make a barplot of the emotions
+
+EMO_plot %>% ggplot() +
+  geom_bar(aes(x = reorder(emotion, count), y = count, fill = count), 
+  stat = "identity") + scale_fill_viridis_c() +
+  labs(x = "Emotion", y = "Total count") +
+  ggtitle("Emotions of Podcast summaries") +
+  theme(plot.title = element_text(hjust=0.5), 
+  axis.text.x = element_text(angle = 45, hjust = 1))
+
+```
+
+```{r}
+
+## Load the text data as a Corpus
+
+corpus <- iconv(text_data)
+corpus <- Corpus(VectorSource(corpus))
+inspect(corpus[1:5])
+
+## construct a document matrix that contains the frequency of words
+
+doc_m <- TermDocumentMatrix(corpus)
+doc_m <- as.matrix(doc_m)
+doc_m[1:10, 1:10]
+```
+To show the most frequent words, we perform a text analysis using word clouds which visualize word frequencies by using diﬀerent sizes of words.
+
+```{r}
+
+word <- sort(rowSums(doc_m), decreasing = TRUE)
+wordcloud(words = names(word),
+          freq = word,
+          min.freq=5,
+          max.words = 1000,
+          random.order = FALSE,
+          scale = c(4, 0.5),
+          colors = rainbow(10))
+```
+
+```{r}
+
+## Make a barplot for emotions of podcast summaries by rating
+
+Rating_high <- rownames_to_column(as.data.frame(colSums(EMO[which(uni_podcast_data$rating_value>=4.7),])))
+
+colnames(Rating_high) <- c("emotion", "count")
+
+Rating_high %>% ggplot() +
+  geom_bar(aes(x = reorder(emotion, count), y = count, fill = count), 
+  stat = "identity") + scale_fill_viridis_c() +
+  labs(x = "Emotion", y = "Total count") +
+  ggtitle("Emotions of top-rated Podcast summaries") +
+  theme(plot.title = element_text(hjust=0.5), 
+  axis.text.x = element_text(angle = 45, hjust = 1))
+
+
+Rating_low <- rownames_to_column(as.data.frame(colSums(EMO[which(uni_podcast_data$rating_value<4.7),])))
+colnames(Rating_low) <- c("emotion", "count")
+
+
+Rating_low %>% ggplot() +
+  geom_bar(aes(x = reorder(emotion, count), y = count, fill = count), 
+  stat = "identity") + scale_fill_viridis_c() +
+  labs(x = "Emotion", y = "Total count") +
+  ggtitle("Emotions of low-rated Podcast summaries") +
+  theme(plot.title = element_text(hjust=0.5), 
+  axis.text.x = element_text(angle = 45, hjust = 1))
+```
